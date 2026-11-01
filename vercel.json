@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx prisma generate && next build",
+  "buildCommand": "node -e \"const fs=require('fs'); fs.copyFileSync('prisma/schema.postgres.prisma', 'prisma/schema.prisma')\" && npx prisma generate && npx prisma db push && npm run build",
   "outputDirectory": ".next",
   "framework": "nextjs",
   "installCommand": "npm install"

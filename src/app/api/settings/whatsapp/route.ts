@@ -2,16 +2,44 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { WhatsAppCloudApiClient } from '@/services/meta/whatsapp-client';
 
+// Helper to ensure default tenant & config exist
+async function getOrCreateDefaultTenant() {
+  let tenant = await prisma.tenant.findFirst({
+    where: { isActive: true },
+    include: { whatsappConfig: true },
+  });
+
+  if (!tenant) {
+    tenant = await prisma.tenant.create({
+      data: {
+        name: 'Bulk Messaging Pro',
+        slug: 'acme-corp',
+        planType: 'PRO',
+        whatsappConfig: {
+          create: {
+            wabaId: '2423715105131368',
+            phoneNumberId: '1316638444876007',
+            displayPhoneNumber: '+1 (555) 184-6893',
+            verifiedName: 'Bulk Messaging Pro Official',
+            qualityRating: 'GREEN',
+            messagingTier: 'TIER_1K',
+            encryptedAccessToken: 'EAAXxXx_SamplePermanentMetaToken_xXxX',
+            webhookVerifyToken: 'whatsapp_bulk_webhook_verify_token_2026',
+            isConnected: true,
+          },
+        },
+      },
+      include: { whatsappConfig: true },
+    });
+  }
+
+  return tenant;
+}
+
 // GET /api/settings/whatsapp
 export async function GET() {
   try {
-    const tenant = await prisma.tenant.findFirst({
-      where: { isActive: true },
-      include: { whatsappConfig: true },
-    });
-
-    if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
-
+    const tenant = await getOrCreateDefaultTenant();
     const config = tenant.whatsappConfig;
 
     return NextResponse.json({
@@ -31,6 +59,7 @@ export async function GET() {
         : null,
     });
   } catch (error: any) {
+    console.error('Settings GET error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -38,8 +67,7 @@ export async function GET() {
 // POST /api/settings/whatsapp - Update & Test Connection
 export async function POST(req: NextRequest) {
   try {
-    const tenant = await prisma.tenant.findFirst({ where: { isActive: true } });
-    if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
+    const tenant = await getOrCreateDefaultTenant();
 
     const body = await req.json();
     const { wabaId, phoneNumberId, accessToken, webhookVerifyToken, appSecret } = body;
