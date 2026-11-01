@@ -11,7 +11,7 @@ async function main() {
     where: { slug: 'acme-corp' },
     update: {},
     create: {
-      name: 'Acme Enterprise Solutions',
+      name: 'Bulk Messaging Pro',
       slug: 'acme-corp',
       brandColor: '#25D366',
       planType: 'PRO',
@@ -40,16 +40,21 @@ async function main() {
 
   console.log(`✅ Admin user created: ${adminUser.email}`);
 
-  // 3. Create WhatsApp API Configuration
+  // 3. Create WhatsApp API Configuration with User's Meta Credentials
   await prisma.whatsAppConfig.upsert({
     where: { tenantId: tenant.id },
-    update: {},
+    update: {
+      wabaId: '2423715105131368',
+      phoneNumberId: '1316638444876007',
+      isConnected: true,
+      lastSyncedAt: new Date(),
+    },
     create: {
       tenantId: tenant.id,
-      wabaId: '109876543210987',
-      phoneNumberId: '101234567890123',
-      displayPhoneNumber: '+1 555-0199',
-      verifiedName: 'Acme Solutions Official',
+      wabaId: '2423715105131368',
+      phoneNumberId: '1316638444876007',
+      displayPhoneNumber: '+1 (555) 184-6893',
+      verifiedName: 'Bulk Messaging Pro Official',
       qualityRating: 'GREEN',
       messagingTier: 'TIER_1K',
       encryptedAccessToken: 'EAAXxXx_SamplePermanentMetaToken_xXxX',
@@ -59,7 +64,7 @@ async function main() {
     },
   });
 
-  console.log('✅ WhatsApp API configuration initialized');
+  console.log('✅ WhatsApp API configuration initialized with WABA ID and Phone Number ID');
 
   // 4. Create Tags
   const tagVip = await prisma.tag.upsert({
@@ -221,7 +226,7 @@ async function main() {
         },
         {
           type: 'BODY',
-          text: 'Hello {{1}},\n\nThank you for choosing Acme Solutions! Please find attached your official Quotation (Ref: {{2}}) for {{3}}.\n\nYour exclusive discount of {{4}} has been applied. Let us know if you would like to proceed with the order.\n\nBest regards,\nAcme Sales Team',
+          text: 'Hello {{1}},\n\nThank you for choosing Bulk Messaging Pro! Please find attached your official Quotation (Ref: {{2}}) for {{3}}.\n\nYour exclusive discount of {{4}} has been applied. Let us know if you would like to proceed with the order.\n\nBest regards,\nSales Team',
           example: {
             body_text: [['Rahim', 'QT-2026-091', 'Premium Steel Pipes', '15%']],
           },
@@ -288,7 +293,7 @@ async function main() {
         },
         {
           type: 'FOOTER',
-          text: 'Acme Wholesale Catalogue 2026',
+          text: 'Bulk Messaging Pro Catalogue 2026',
         },
         {
           type: 'BUTTONS',
