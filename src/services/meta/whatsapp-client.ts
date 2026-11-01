@@ -14,10 +14,12 @@ export class WhatsAppCloudApiClient {
 
   constructor(auth: MetaAuthConfig) {
     this.auth = auth;
-    // Auto-detect mock/test mode for local development or demo tokens
+    // Auto-detect mock/test mode for local development or demo/empty tokens
     this.isMockMode =
       !auth.accessToken ||
+      auth.accessToken === 'mock_token' ||
       auth.accessToken.startsWith('EAAXxXx_Sample') ||
+      auth.accessToken.length < 30 ||
       auth.phoneNumberId.startsWith('101234567890');
   }
 
@@ -153,7 +155,7 @@ export class WhatsAppCloudApiClient {
             },
             {
               type: 'BODY',
-              text: 'Hello {{1}},\n\nThank you for choosing Acme Solutions! Please find attached your official Quotation (Ref: {{2}}) for {{3}}.\n\nYour exclusive discount of {{4}} has been applied. Let us know if you would like to proceed with the order.\n\nBest regards,\nAcme Sales Team',
+              text: 'Hello {{1}},\n\nThank you for choosing Bulk Messaging Pro! Please find attached your official Quotation (Ref: {{2}}) for {{3}}.\n\nYour exclusive discount of {{4}} has been applied. Let us know if you would like to proceed with the order.\n\nBest regards,\nSales Team',
             },
             {
               type: 'FOOTER',
@@ -188,7 +190,7 @@ export class WhatsAppCloudApiClient {
             },
             {
               type: 'FOOTER',
-              text: 'Acme Wholesale Catalogue 2026',
+              text: 'Bulk Messaging Pro Catalogue 2026',
             },
             {
               type: 'BUTTONS',
@@ -213,8 +215,8 @@ export class WhatsAppCloudApiClient {
     if (this.isMockMode) {
       return {
         id: this.auth.phoneNumberId,
-        verified_name: 'Acme Solutions Official',
-        display_phone_number: '+1 555-0199',
+        verified_name: 'Bulk Messaging Pro Official',
+        display_phone_number: '+1 (555) 184-6893',
         quality_rating: 'GREEN',
         messaging_limit_tier: 'TIER_1K',
         code_verification_status: 'VERIFIED',
