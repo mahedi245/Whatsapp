@@ -1,0 +1,355 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// 1. Multi-Tenant Organizations & Users
+// ----------------------------------------------------
+
+model Tenant {
+  id                        String            @id @default(cuid())
+  name                      String
+  slug                      String            @unique
+  logoUrl                   String?
+  brandColor                String?           @default("#25D366")
+  customDomain              String?           @unique
+
+  // Subscription Plan & Limits
+  planType                  String            @default("STARTER") // FREE, STARTER, PRO, ENTERPRISE
+  maxContactsLimit          Int               @default(5000)
+  maxMonthlyCampaignsLimit   Int               @default(50)
+  maxMessagesPerMonth       Int               @default(25000)
+  messagesSentThisMonth     Int               @default(0)
+
+  isActive                  Boolean           @default(true)
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  users                     User[]
+  whatsappConfig            WhatsAppConfig?
+  contacts                  Contact[]
+  tags                      Tag[]
+  contactGroups             ContactGroup[]
+  templates                 Template[]
+  campaigns                 Campaign[]
+  campaignMessages          CampaignMessage[]
+  conversations             Conversation[]
+  webhookLogs               WebhookLog[]
+}
+
+model User {
+  id            String       @id @default(cuid())
+  tenantId      String
+  email         String       @unique
+  passwordHash  String
+  name          String
+  role          String       @default("TENANT_ADMIN") // SUPER_ADMIN, TENANT_ADMIN, AGENT
+  avatarUrl     String?
+  isActive      Boolean      @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns     Campaign[]
+  assignedChats Conversation[]
+
+  @@index([tenantId])
+}
+
+// ----------------------------------------------------
+// 2. WhatsApp Meta Cloud API Configuration
+// ----------------------------------------------------
+
+model WhatsAppConfig {
+  id                   String    @id @default(cuid())
+  tenantId             String    @unique
+
+  wabaId               String    // WhatsApp Business Account ID
+  phoneNumberId        String    // Phone Number ID
+  displayPhoneNumber   String?   // Formatted phone number e.g. +1 555-0199
+  verifiedName         String?   // Business profile display name
+
+  qualityRating        String    @default("GREEN") // GREEN, YELLOW, RED, UNKNOWN
+  messagingTier        String    @default("TIER_1K") // TIER_50, TIER_250, TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
+
+  encryptedAccessToken String    // Permanent system user token
+  webhookVerifyToken   String    // Secret verify token configured in Meta App Dashboard
+  appSecret            String?   // Meta App Secret for validating x-hub-signature-256
+
+  isConnected          Boolean   @default(false)
+  lastSyncedAt         DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// 3. Contacts, Groups & Custom Attributes
+// ----------------------------------------------------
+
+model Contact {
+  id               String               @id @default(cuid())
+  tenantId         String
+  phoneNumber      String               // Normalized E.164 without spaces/dashes (+1234567890)
+  firstName        String?
+  lastName         String?
+  email            String?
+  company          String?
+
+  // Custom Variables (Stored as JSON String: { "due_amount": "500", "invoice_no": "INV-102" })
+  customAttributes String?              @default("{}")
+
+  isOptedOut       Boolean              @default(false)
+  optedOutAt       DateTime?
+  status           String               @default("ACTIVE") // ACTIVE, INVALID, BOUNCED
+
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tags             ContactTagMapping[]
+  groupMemberships ContactGroupMember[]
+  campaignMessages CampaignMessage[]
+  conversations    Conversation[]
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId, isOptedOut])
+}
+
+model Tag {
+  id        String              @id @default(cuid())
+  tenantId  String
+  name      String
+  color     String              @default("#25D366")
+  createdAt DateTime            @default(now())
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts  ContactTagMapping[]
+
+  @@unique([tenantId, name])
+}
+
+model ContactTagMapping {
+  id        String   @id @default(cuid())
+  contactId String
+  tagId     String
+
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, tagId])
+}
+
+model ContactGroup {
+  id          String               @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime             @default(now())
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members     ContactGroupMember[]
+
+  @@unique([tenantId, name])
+}
+
+model ContactGroupMember {
+  id        String       @id @default(cuid())
+  groupId   String
+  contactId String
+
+  group     ContactGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, contactId])
+}
+
+// ----------------------------------------------------
+// 4. WhatsApp Templates
+// ----------------------------------------------------
+
+model Template {
+  id               String     @id @default(cuid())
+  tenantId         String
+  metaTemplateId   String     // ID from Meta Graph API
+  name             String
+  language         String     @default("en_US")
+  category         String     // MARKETING, UTILITY, AUTHENTICATION
+  status           String     // APPROVED, PENDING, REJECTED, PAUSED
+
+  // JSON serialized template structure (HEADER, BODY, FOOTER, BUTTONS)
+  componentsJson   String
+
+  // Parameter metadata (e.g., ["name", "due_amount", "link_url"])
+  parameterFormat  String     @default("POSITIONAL") // POSITIONAL or NAMED
+  sampleValuesJson String?
+
+  lastSyncedAt     DateTime   @default(now())
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns        Campaign[]
+
+  @@unique([tenantId, name, language])
+}
+
+// ----------------------------------------------------
+// 5. Campaigns & Broadcast Execution
+// ----------------------------------------------------
+
+model Campaign {
+  id                 String            @id @default(cuid())
+  tenantId           String
+  createdById        String
+  templateId         String
+  name               String
+  description        String?
+
+  status             String            @default("DRAFT") // DRAFT, SCHEDULED, QUEUED, PROCESSING, PAUSED, COMPLETED, FAILED
+
+  // Rich Media Attachment (for template HEADER: PDF, Quotation, Image, Video)
+  mediaType          String?           // NONE, DOCUMENT, IMAGE, VIDEO
+  mediaUrl           String?
+  mediaFilename      String?
+
+  // Variable Mapping: JSON mapping template {{1}}, {{2}} to contact attributes
+  variableMapping    String            @default("{}")
+
+  // Audience Filter: JSON array of group IDs or tag IDs
+  audienceFilter     String            @default("{}")
+
+  // Execution Metrics
+  totalRecipients    Int               @default(0)
+  sentCount          Int               @default(0)
+  deliveredCount     Int               @default(0)
+  readCount          Int               @default(0)
+  failedCount        Int               @default(0)
+
+  // Throttling configuration (milliseconds between messages)
+  batchDelayMs       Int               @default(100) // 50ms - 200ms
+
+  scheduledAt        DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy          User              @relation(fields: [createdById], references: [id])
+  template           Template          @relation(fields: [templateId], references: [id])
+  messages           CampaignMessage[]
+
+  @@index([tenantId, status])
+}
+
+model CampaignMessage {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  campaignId         String
+  contactId          String
+  recipientNumber    String    // E.164 destination
+
+  metaMessageId      String?   @unique // wamid.HBg... returned by Meta
+
+  status             String    @default("PENDING") // PENDING, QUEUED, SENT, DELIVERED, READ, FAILED
+
+  sentAt             DateTime?
+  deliveredAt        DateTime?
+  readAt             DateTime?
+  failedAt           DateTime?
+
+  errorCode          String?
+  errorMessage       String?
+
+  // Rendered dynamic payload stored for audit
+  dynamicValuesJson  String?
+
+  retryCount         Int       @default(0)
+  maxRetries         Int       @default(3)
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign           Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact            Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@index([tenantId, recipientNumber])
+}
+
+// ----------------------------------------------------
+// 6. Two-Way Live Chat / Inbox
+// ----------------------------------------------------
+
+model Conversation {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  contactId          String
+  assignedToUserId   String?
+
+  unreadCount        Int           @default(0)
+  lastMessageAt      DateTime      @default(now())
+  isResolved         Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact            Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedTo         User?         @relation(fields: [assignedToUserId], references: [id])
+  messages           ChatMessage[]
+
+  @@unique([tenantId, contactId])
+  @@index([tenantId, lastMessageAt])
+}
+
+model ChatMessage {
+  id             String       @id @default(cuid())
+  tenantId       String
+  conversationId String
+  metaMessageId  String?      @unique
+
+  direction      String       // INBOUND (from customer), OUTBOUND (from agent)
+  messageType    String       // TEXT, IMAGE, DOCUMENT, AUDIO, VIDEO, INTERACTIVE, TEMPLATE
+
+  body           String?
+  mediaUrl       String?
+  mediaMimeType  String?
+
+  status         String       @default("RECEIVED") // RECEIVED, QUEUED, SENT, DELIVERED, READ, FAILED
+  rawPayload     String?      // Meta webhook payload JSON for troubleshooting
+
+  createdAt      DateTime     @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ----------------------------------------------------
+// 7. Webhook Audit Trail & Deduplication
+// ----------------------------------------------------
+
+model WebhookLog {
+  id             String    @id @default(cuid())
+  tenantId       String?
+  metaMessageId  String?
+  eventType      String    // messages, message_status, account_update
+  payloadJson    String
+  isProcessed    Boolean   @default(false)
+  errorDetails   String?
+  createdAt      DateTime  @default(now())
+
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([metaMessageId])
+  @@index([createdAt])
+}

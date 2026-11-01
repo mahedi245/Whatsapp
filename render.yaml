@@ -3,7 +3,7 @@ services:
     name: whatsapp-bulk-saas
     env: node
     plan: free
-    buildCommand: npx prisma generate && npx prisma db push && npm run build
+    buildCommand: node -e "const fs=require('fs'); fs.copyFileSync('prisma/schema.postgres.prisma', 'prisma/schema.prisma')" && npx prisma generate && npx prisma db push && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
