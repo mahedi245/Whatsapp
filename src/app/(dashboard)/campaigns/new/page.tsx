@@ -590,26 +590,25 @@ export default function NewCampaignWizard() {
                 )}
               </div>
 
-              {/* Speed Slider */}
+              {/* Speed & Anti-Ban Notice */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                  <span>Dispatch Speed:</span>
+                  <span>Dispatch Speed & Anti-Ban Protection:</span>
                   <span className="font-mono text-emerald-600">
-                    {Math.round(1000 / batchDelayMs)} msgs/second ({batchDelayMs}ms delay)
+                    Safe Human Pace (3.5s - 7.5s randomized)
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="200"
-                  step="10"
-                  value={batchDelayMs}
-                  onChange={(e) => setBatchDelayMs(Number(e.target.value))}
-                  className="w-full accent-emerald-500"
-                />
-                <span className="text-[10px] text-slate-400 block">
-                  🛡️ Anti-Ban Protection: Safe recommended speed is 10 to 25 msgs/sec for Tier 1 numbers.
-                </span>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-[11px] text-emerald-800 font-medium space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span>🛡️ Smart Anti-Ban Safeguards Active</span>
+                  </p>
+                  <p>
+                    • প্রতিটি মেসেজের মাঝে ৩.৫ থেকে ৭.৫ সেকেন্ডের র‍্যান্ডম হিউম্যান ডিলে যুক্ত করা হয়।
+                  </p>
+                  <p>
+                    • প্রতি ২৫টি মেসেজ পাঠানোর পর ক্যারিয়ার/অ্যালগরিদম ব্যান এড়াতে ৪৫ সেকেন্ডের রেস্টিং পজ নেওয়া হয়।
+                  </p>
+                </div>
               </div>
 
               {/* Action Buttons */}

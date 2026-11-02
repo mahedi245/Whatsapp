@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
+  experimental: {
+    serverComponentsExternalPackages: [
+      '@whiskeysockets/baileys',
+      'pino',
+      'qrcode',
+    ],
+  },
   images: {
     remotePatterns: [
       {

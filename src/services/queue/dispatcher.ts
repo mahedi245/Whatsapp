@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { WhatsAppCloudApiClient, MetaApiError } from '../meta/whatsapp-client';
 import { TokenBucketRateLimiter } from './rate-limiter';
 import { VariableResolver } from '../campaign/variable-resolver';
+import { BaileysSessionManager } from '../qr-gateway/session-manager';
+import { BaileysMessageFormatter } from '../qr-gateway/message-formatter';
 
 export class CampaignDispatcher {
   private campaignId: string;
@@ -40,11 +42,17 @@ export class CampaignDispatcher {
     }
 
     const whatsAppConfig = campaign.tenant.whatsappConfig;
-    const client = new WhatsAppCloudApiClient({
-      phoneNumberId: whatsAppConfig.phoneNumberId,
-      wabaId: whatsAppConfig.wabaId,
-      accessToken: whatsAppConfig.encryptedAccessToken,
-    });
+    const isBaileys = (whatsAppConfig.gatewayProvider || 'BAILEYS') === 'BAILEYS';
+
+    const metaClient = !isBaileys
+      ? new WhatsAppCloudApiClient({
+          phoneNumberId: whatsAppConfig.phoneNumberId,
+          wabaId: whatsAppConfig.wabaId,
+          accessToken: whatsAppConfig.encryptedAccessToken,
+        })
+      : null;
+
+    const baileysManager = isBaileys ? BaileysSessionManager.getInstance() : null;
 
     // Mark campaign as PROCESSING
     await prisma.campaign.update({
@@ -98,46 +106,92 @@ export class CampaignDispatcher {
           continue;
         }
 
-        // Wait for rate-limiter token to maintain safe dispatch speed
-        await this.limiter.acquire();
+        // Anti-Ban Rate Limiting:
+        if (isBaileys) {
+          // 1. Enforce randomized human delay: 3.5s to 7.5s between messages
+          const jitterDelay = Math.floor(Math.random() * (7500 - 3500 + 1)) + 3500;
+          await new Promise((resolve) => setTimeout(resolve, jitterDelay));
+
+          // 2. Anti-Ban Batch Rest Interval: Every 25 messages, rest for 45-60 seconds
+          if (totalSentInRun > 0 && totalSentInRun % 25 === 0) {
+            console.log(
+              `⏸️ Anti-ban safeguard: Pausing campaign ${this.campaignId} for 45s rest after ${totalSentInRun} messages.`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 45000));
+          }
+        } else {
+          // Meta API Token Bucket rate limiter
+          await this.limiter.acquire();
+        }
 
         try {
-          // Resolve personalized variables
-          const components = VariableResolver.resolveComponents(
-            campaign.template.componentsJson,
-            campaign.variableMapping,
-            msg.contact,
-            campaign.mediaUrl
-              ? {
-                  mediaType: campaign.mediaType || 'DOCUMENT',
-                  mediaUrl: campaign.mediaUrl,
-                  filename: campaign.mediaFilename || 'Attachment.pdf',
-                }
-              : undefined
-          );
+          let messageId: string;
+          let auditPayload: string;
 
-          // Dispatch to Meta WhatsApp Cloud API
-          const response = await client.sendTemplateMessage({
-            to: msg.recipientNumber,
-            templateName: campaign.template.name,
-            languageCode: campaign.template.language,
-            components,
-          });
+          if (isBaileys && baileysManager) {
+            // Resolve template to WhatsApp markdown with media for Baileys
+            const formatted = BaileysMessageFormatter.formatMessage(
+              campaign.template.componentsJson,
+              campaign.variableMapping,
+              msg.contact,
+              campaign.mediaUrl
+                ? {
+                    mediaType: campaign.mediaType || 'DOCUMENT',
+                    mediaUrl: campaign.mediaUrl,
+                    filename: campaign.mediaFilename || 'Attachment.pdf',
+                  }
+                : undefined
+            );
 
-          const metaId = response.messages?.[0]?.id || `wamid.${Date.now()}`;
+            const sendResult = await baileysManager.sendDirectMessage(this.tenantId, {
+              to: msg.recipientNumber,
+              text: formatted.text,
+              mediaUrl: formatted.mediaUrl,
+              mediaType: formatted.mediaType,
+              filename: formatted.mediaFilename,
+              mimeType: formatted.mediaMimeType,
+            });
 
-          // Update message record
+            messageId = sendResult.messageId;
+            auditPayload = JSON.stringify(formatted);
+          } else {
+            // Resolve dynamic variables for Meta Cloud API
+            const components = VariableResolver.resolveComponents(
+              campaign.template.componentsJson,
+              campaign.variableMapping,
+              msg.contact,
+              campaign.mediaUrl
+                ? {
+                    mediaType: campaign.mediaType || 'DOCUMENT',
+                    mediaUrl: campaign.mediaUrl,
+                    filename: campaign.mediaFilename || 'Attachment.pdf',
+                  }
+                : undefined
+            );
+
+            const response = await metaClient!.sendTemplateMessage({
+              to: msg.recipientNumber,
+              templateName: campaign.template.name,
+              languageCode: campaign.template.language,
+              components,
+            });
+
+            messageId = response.messages?.[0]?.id || `wamid.${Date.now()}`;
+            auditPayload = JSON.stringify(components);
+          }
+
+          // Update message record as SENT
           await prisma.campaignMessage.update({
             where: { id: msg.id },
             data: {
               status: 'SENT',
-              metaMessageId: metaId,
+              metaMessageId: messageId,
               sentAt: new Date(),
-              dynamicValuesJson: JSON.stringify(components),
+              dynamicValuesJson: auditPayload,
             },
           });
 
-          // Increment campaign counter & tenant billing usage
+          // Increment campaign counter & tenant monthly count
           await prisma.campaign.update({
             where: { id: this.campaignId },
             data: { sentCount: { increment: 1 } },
@@ -170,10 +224,12 @@ export class CampaignDispatcher {
             data: { failedCount: { increment: 1 } },
           });
 
-          // Anti-Ban Protection: Pause automatically on 15 consecutive failures
-          if (consecutiveErrors >= 15) {
+          // Anti-Ban Circuit Breaker:
+          // For Baileys, pause after 5 errors. For Meta, pause after 15 errors.
+          const maxAllowedErrors = isBaileys ? 5 : 15;
+          if (consecutiveErrors >= maxAllowedErrors) {
             console.warn(
-              `⚠️ Campaign ${this.campaignId} automatically PAUSED due to 15 consecutive Meta API errors.`
+              `⚠️ Campaign ${this.campaignId} automatically PAUSED due to ${consecutiveErrors} consecutive errors.`
             );
             await prisma.campaign.update({
               where: { id: this.campaignId },

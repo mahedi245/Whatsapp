@@ -70,6 +70,15 @@ model WhatsAppConfig {
   id                   String    @id @default(cuid())
   tenantId             String    @unique
 
+  // Gateway Provider selector: "BAILEYS" (QR Scan) or "META"
+  gatewayProvider      String    @default("BAILEYS")
+
+  // Baileys QR Gateway State
+  qrCodeDataUrl        String?
+  pairingStatus        String    @default("DISCONNECTED") // DISCONNECTED, SCANNING, CONNECTED
+  pairedPhoneNumber    String?
+  pairedPushName       String?
+
   wabaId               String    // WhatsApp Business Account ID
   phoneNumberId        String    // Phone Number ID
   displayPhoneNumber   String?   // Formatted phone number e.g. +1 555-0199

@@ -13,6 +13,10 @@ export async function GET() {
     if (!tenant) {
       return NextResponse.json({
         config: {
+          gatewayProvider: 'BAILEYS',
+          pairingStatus: 'DISCONNECTED',
+          pairedPhoneNumber: null,
+          pairedPushName: null,
           wabaId: '2423715105131368',
           phoneNumberId: '1316638444876007',
           displayPhoneNumber: '+1 (555) 184-6893',
@@ -32,6 +36,10 @@ export async function GET() {
     return NextResponse.json({
       config: config
         ? {
+            gatewayProvider: config.gatewayProvider || 'BAILEYS',
+            pairingStatus: config.pairingStatus || 'DISCONNECTED',
+            pairedPhoneNumber: config.pairedPhoneNumber,
+            pairedPushName: config.pairedPushName,
             wabaId: config.wabaId,
             phoneNumberId: config.phoneNumberId,
             displayPhoneNumber: config.displayPhoneNumber,
@@ -44,6 +52,10 @@ export async function GET() {
             hasAccessToken: !!config.encryptedAccessToken,
           }
         : {
+            gatewayProvider: 'BAILEYS',
+            pairingStatus: 'DISCONNECTED',
+            pairedPhoneNumber: null,
+            pairedPushName: null,
             wabaId: '2423715105131368',
             phoneNumberId: '1316638444876007',
             displayPhoneNumber: '+1 (555) 184-6893',
@@ -78,14 +90,13 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { wabaId, phoneNumberId, accessToken, webhookVerifyToken, appSecret } = body;
+    const { wabaId, phoneNumberId, accessToken, webhookVerifyToken, appSecret, gatewayProvider } = body;
 
-    if (!wabaId || !phoneNumberId) {
-      return NextResponse.json(
-        { error: 'WABA ID and Phone Number ID are required' },
-        { status: 400 }
-      );
-    }
+    const provider = gatewayProvider || 'BAILEYS';
+
+    // If switching to BAILEYS, wabaId and phoneNumberId are optional
+    const targetWabaId = wabaId || '2423715105131368';
+    const targetPhoneId = phoneNumberId || '1316638444876007';
 
     const finalAccessToken = accessToken && accessToken.trim() !== ''
       ? accessToken
@@ -112,16 +123,12 @@ export async function POST(req: NextRequest) {
         await prisma.whatsAppConfig.update({
           where: { id: existingConfig.id },
           data: {
-            wabaId,
-            phoneNumberId,
-            displayPhoneNumber: '+1 (555) 184-6893',
-            verifiedName: 'Bulk Messaging Pro Official',
-            qualityRating: 'GREEN',
-            messagingTier: 'TIER_1K',
+            gatewayProvider: provider,
+            wabaId: targetWabaId,
+            phoneNumberId: targetPhoneId,
             encryptedAccessToken: finalAccessToken,
             webhookVerifyToken: webhookVerifyToken || 'whatsapp_bulk_webhook_verify_token_2026',
             appSecret: appSecret || null,
-            isConnected: true,
             lastSyncedAt: new Date(),
           },
         }).catch(() => {});
@@ -129,8 +136,9 @@ export async function POST(req: NextRequest) {
         await prisma.whatsAppConfig.create({
           data: {
             tenantId: tenant.id,
-            wabaId,
-            phoneNumberId,
+            gatewayProvider: provider,
+            wabaId: targetWabaId,
+            phoneNumberId: targetPhoneId,
             displayPhoneNumber: '+1 (555) 184-6893',
             verifiedName: 'Bulk Messaging Pro Official',
             qualityRating: 'GREEN',
