@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Ensure module compatibility patches (e.g. whatsapp-rust-bridge exports)
+try {
+  require('./patch-modules.js');
+} catch (patchErr) {}
+
 const dbUrl = process.env.DATABASE_URL || 'file:./dev.db';
 const isPostgres = dbUrl.startsWith('postgresql://') || dbUrl.startsWith('postgres://');
 

@@ -38,6 +38,7 @@ export async function GET() {
         ? {
             gatewayProvider: config.gatewayProvider || 'BAILEYS',
             pairingStatus: config.pairingStatus || 'DISCONNECTED',
+            qrCodeDataUrl: config.qrCodeDataUrl || null,
             pairedPhoneNumber: config.pairedPhoneNumber,
             pairedPushName: config.pairedPushName,
             wabaId: config.wabaId,

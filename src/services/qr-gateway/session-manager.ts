@@ -128,6 +128,23 @@ export class BaileysSessionManager {
       if (active.isInitializing && active.initPromise) {
         return active.initPromise;
       }
+      // If an existing socket is active and already has a QR code, return it without recreating
+      if (active.socket && active.state.qrCodeDataUrl) {
+        return active.state;
+      }
+      // If a socket was created recently (< 60 seconds) and is waiting for QR or active, return current state
+      if (active.socket && (Date.now() - active.state.lastUpdated < 60000)) {
+        return active.state;
+      }
+    }
+
+    // Clean up previous socket before starting a new pairing session
+    if (active?.socket) {
+      try {
+        active.socket.ev.removeAllListeners('connection.update');
+        active.socket.ev.removeAllListeners('creds.update');
+        active.socket.end(undefined);
+      } catch (err) {}
     }
 
     const sessionDir = this.getSessionDirectory(tenantId);
@@ -135,7 +152,7 @@ export class BaileysSessionManager {
       socket: null,
       state: {
         pairingStatus: 'SCANNING',
-        qrCodeDataUrl: null,
+        qrCodeDataUrl: active?.state?.qrCodeDataUrl || null,
         pairedPhoneNumber: null,
         pairedPushName: null,
         isConnected: false,
@@ -164,6 +181,14 @@ export class BaileysSessionManager {
         // Credential persistence
         socket.ev.on('creds.update', saveCreds);
 
+        // QR resolution promise to wait for first QR or connection open event
+        let resolveQrWait: (state: GatewaySessionState) => void = () => {};
+        const qrWaitPromise = new Promise<GatewaySessionState>((resolve) => {
+          resolveQrWait = resolve;
+          // Timeout after 20 seconds so the HTTP response doesn't hang indefinitely
+          setTimeout(() => resolve(sessionRecord.state), 20000);
+        });
+
         // Connection lifecycle updates
         socket.ev.on('connection.update', async (update) => {
           const { connection, lastDisconnect, qr } = update;
@@ -190,6 +215,8 @@ export class BaileysSessionManager {
                   isConnected: false,
                 },
               }).catch(() => {});
+
+              resolveQrWait(sessionRecord.state);
             } catch (qrErr) {
               console.error('Failed to convert QR to Data URL:', qrErr);
             }
@@ -226,6 +253,8 @@ export class BaileysSessionManager {
                 lastSyncedAt: new Date(),
               },
             }).catch(() => {});
+
+            resolveQrWait(sessionRecord.state);
           }
 
           // 3. Connection closed / disconnected
@@ -261,18 +290,16 @@ export class BaileysSessionManager {
                 },
               }).catch(() => {});
             } else {
-              // Automatic reconnect on transient network drops
               sessionRecord.state.isConnected = false;
               sessionRecord.isInitializing = false;
-              setTimeout(() => {
-                this.initializeSocket(tenantId, true).catch(() => {});
-              }, 3000);
             }
           }
         });
 
+        // Await the initial QR code generation or connection
+        const resultState = await qrWaitPromise;
         sessionRecord.isInitializing = false;
-        return sessionRecord.state;
+        return resultState;
       } catch (error) {
         console.error('Failed to initialize Baileys socket:', error);
         sessionRecord.isInitializing = false;

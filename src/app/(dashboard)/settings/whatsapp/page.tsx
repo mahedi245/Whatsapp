@@ -69,6 +69,9 @@ export default function WhatsAppSettingsPage() {
           if (data.config.gatewayProvider) {
             setActiveTab(data.config.gatewayProvider.toLowerCase() === 'meta' ? 'meta' : 'qr');
           }
+          if (data.config.qrCodeDataUrl) {
+            setQrDataUrl(data.config.qrCodeDataUrl);
+          }
           if (data.config.pairingStatus) {
             setPairingStatus(data.config.pairingStatus);
           }
@@ -104,11 +107,12 @@ export default function WhatsAppSettingsPage() {
     try {
       const res = await fetch('/api/gateway/connect', { method: 'POST' });
       const data = await res.json();
-      if (data.status) {
+      if (data?.status?.qrCodeDataUrl) {
         setPairingStatus(data.status.pairingStatus);
         setQrDataUrl(data.status.qrCodeDataUrl);
+      } else {
+        await fetchQrStatus();
       }
-      await fetchQrStatus();
     } catch (err) {
       console.error('Error refreshing QR:', err);
     } finally {
@@ -322,17 +326,31 @@ export default function WhatsAppSettingsPage() {
                           className="w-full h-full object-contain rounded-lg"
                         />
                       ) : (
-                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                        <div className="flex flex-col items-center gap-2 text-slate-400 text-center p-3">
                           <RefreshCw className="w-8 h-8 animate-spin text-emerald-500" />
-                          <span className="text-xs font-semibold">Generating QR Code...</span>
+                          <span className="text-xs font-semibold text-slate-700">QR কোড তৈরি হচ্ছে...</span>
+                          <span className="text-[11px] text-slate-400">কয়েক সেকেন্ড অপেক্ষা করুন</span>
+                          <button
+                            type="button"
+                            onClick={handleRefreshQr}
+                            className="mt-1 text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold underline"
+                          >
+                            দেরি হলে এখানে চাপুন
+                          </button>
                         </div>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                        Ready to Scan
+                      <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                        qrDataUrl
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${
+                          qrDataUrl ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                        }`} />
+                        {qrDataUrl ? 'Ready to Scan' : 'Generating QR...'}
                       </span>
                       <button
                         type="button"
